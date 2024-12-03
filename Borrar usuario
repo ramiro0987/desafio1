@@ -1,0 +1,48 @@
+pipeline {
+    agent any
+    parameters {
+        string(name: 'login', defaultValue: '', description: 'Ingresa el nombre de usuario')
+        choice(name: 'department', choices: ['contabilidad', 'finanzas', 'tecnologia'], description: 'Selecciona el departamento')
+    }
+    stages {
+        stage('Eliminar Usuario') {
+            steps {
+                script {
+                    // Eliminar usuario si existe
+                    sh """
+                    if id ${params.login} &>/dev/null; then
+                        echo "Eliminando usuario ${params.login}..."
+                        sudo userdel -r ${params.login}
+                    else
+                        echo "El usuario ${params.login} no existe."
+                    fi
+                    """
+                }
+            }
+        }
+        stage('Eliminar Grupo') {
+            steps {
+                script {
+                    // Eliminar grupo si existe
+                    sh """
+                    if getent group ${params.department} > /dev/null; then
+                        echo "Eliminando el grupo '${params.department}'..."
+                        sudo groupdel ${params.department}
+                    else
+                        echo "El grupo '${params.department}' no existe."
+                    fi
+                    """
+                }
+            }
+        }
+        post {
+            success {
+                echo "Usuario y grupo eliminados exitosamente"
+            }
+            failure {
+                echo "Error al eliminar usuario o grupo"
+            }
+        }
+    }
+}
+
