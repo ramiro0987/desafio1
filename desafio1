@@ -1,32 +1,25 @@
-// Generar una contraseña temporal
-def generatePassword() {
-    def password = UUID.randomUUID().toString().replaceAll('-', '').take(8)
-    return password
-}
-
 pipeline {
     agent any
     parameters {
-        string(name: 'login', defaultValue: '', description: 'Ingresa el login')
-        string(name: 'name', defaultValue: '', description: 'Ingresa el nombre')
-        string(name: 'lastname', defaultValue: '', description: 'Ingresa el apellido')
-        choice(name: 'department', choices: ['contabilidad', 'finanzas', 'tecnologia'], description: 'Selecciona el departamento')
+        string (name: 'login', defaultValue: '', description: 'Ingresa el login')
+        string (name: 'name', defaultValue: '', description: 'Ingresa el nombre')
+        string (name: 'lastname', defaultValue: '', description: 'Ingresa el apellido')
+        choice (name: 'department', choices: ['contabilidad','finanzas','tecnologia'], description: 'Selecciona el departamento')
     }
     stages {
-        stage('Crea una password temporal') {
+        stage ('Crea una password temporal'){
             steps {
                 script {
-                    def password = generatePassword().toString()
+                    password = UUID.randomUUID().toString().replaceAll('-', '').take(8)
                     echo "Password temporal: ${password}"
                 }
             }
         }
-        stage('Validar y crear grupo') {
+        stage ('Validar y crear grupo') {
             steps {
                 script {
-                    // Verificar si el grupo existe; si no, crearlo
-                    def groupExists = sh(script: "getent group ${params.department}", returnStatus: true)
-                    if (groupExists != 0) {
+                    def result = sh(script: "getent group ${params.department}", returnStatus: true)
+                    if (result != 0) {
                         echo "El grupo '${params.department}' no existe. Creándolo ahora..."
                         sh "sudo groupadd ${params.department}"
                     } else {
@@ -35,26 +28,18 @@ pipeline {
                 }
             }
         }
-        stage('Crea el usuario y asigna el grupo') {
+        stage ('Crea el usuario y asigna el grupo') {
             steps {
-                script {
-                    // Crear el usuario
-                    sh "sudo useradd -m -s /bin/bash ${params.login}"
-                    // Asignar el usuario al grupo
-                    sh "sudo usermod -aG ${params.department} ${params.login}"
-                }
+                sh "sudo useradd -m -s /bin/bash ${params.login}"
+                sh "sudo usermod -aG ${params.department} ${params.login}"
             }
         }
-        stage('Asigna la password temporal') {
+        stage ('Asigna la password temporal') {
             steps {
-                script {
-                    def password = generatePassword()
-                    echo "${params.login}:${password}"
-                    sh "echo ${params.login}:${password} | sudo chpasswd"
-                }
+                sh "echo ${params.login}:${password} | sudo chpasswd"
             }
         }
-        stage('Expirar la password temporal') {
+        stage ('Expirar la password temporal') {
             steps {
                 sh "sudo passwd -e ${params.login}"
             }
@@ -62,17 +47,24 @@ pipeline {
     }
     post {
         success {
-            echo "Usuario creado exitosamente:"
-            echo "Login: ${params.login}"
-            echo "Departamento: ${params.department}"
-        }
-        aborted {
-            echo "El proceso fue abortado. El usuario no fue creado."
-            sh "sudo userdel -r ${params.login}"
+            script {
+                // Generar un reporte en formato Markdown
+                def reporte = """
+                # Reporte de Creación de Usuario
+                
+                **Login:** ${params.login}  
+                **Nombre Completo:** ${params.name} ${params.lastname}  
+                **Departamento:** ${params.department}  
+                **Contraseña Temporal:** ${password}  
+                **Estado:** Creado exitosamente ✅
+                """
+                writeFile file: 'reporte.md', text: reporte
+                echo "Reporte generado: reporte.md"
+            }
         }
         failure {
-            echo "Ocurrió un error. Eliminando el usuario..."
-            sh "sudo userdel -r ${params.login}"
+            echo "No se pudo crear el usuario, eliminando datos..."
+            sh "sudo userdel -r ${params.login} || true"
         }
     }
 }
