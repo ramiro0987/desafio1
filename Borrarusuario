@@ -1,65 +1,73 @@
 pipeline {
     agent any
     parameters {
-        string(name: 'USER_UID', defaultValue: '', description: 'UID del usuario Linux a remover: ')
+        string(name: 'USER_UID', defaultValue: '', description: 'UID del usuario Linux a eliminar (sin el UID no se procederá): ')
     }
     stages {
-        stage('Lista de usuarios antes de remover') {
+        stage('Mostrar usuarios antes de eliminar') {
             steps {
                 script {
-                    echo "Lista de usuarios antes de remover al usuario: "
-                    sh 'awk -F: \'$3 >= 1000 && $3 < 60000 {print $0}\' /etc/passwd' 
-                    }
+                    echo "Usuarios en el sistema antes de la eliminación:"
+                    sh 'awk -F: \'$3 >= 1000 && $3 < 60000 {print $1}\' /etc/passwd'
                 }
             }
-        stage('Remover usuario') {
+        }
+        
+        stage('Eliminar usuario') {
             steps {
                 script {
                     if (params.USER_UID) {
-                        // Encuentra el nombre de usuario y el grupo primario en base al UID:
+                        // Obtener información del usuario basado en el UID:
                         def userInfo = sh(script: "getent passwd ${params.USER_UID}", returnStdout: true).trim()
                         def username = userInfo.split(':')[0]
                         def primaryGroupID = userInfo.split(':')[3]
                         def primaryGroupName = sh(script: "getent group ${primaryGroupID} | cut -d: -f1", returnStdout: true).trim()
-                        // Verifica si el usuario está dentro del grupo sudo y de ser verdadero lo quita:
-                        def userInSudoGroup = sh(script: "getent group sudo | grep -w ${username}", returnStatus: true) == 0 
-                        if (userInSudoGroup) { 
-                            try {
-                            sh "sudo deluser ${username} sudo" 
-                            echo "User ${username} removed from sudo group" 
-                            } catch (Exception e) {
-                            echo "Failed to delete user ${username}: ${e.message}"
-                            }
-                        } else { 
-                        echo "User ${username} is not in the sudo group"
+                        
+                        // Comprobación si el usuario está en el grupo 'sudo' y eliminarlo de ser necesario:
+                        def isInSudoGroup = sh(script: "getent group sudo | grep -w ${username}", returnStatus: true) == 0
+                        if (isInSudoGroup) {
+                            sh "sudo deluser ${username} sudo"
+                            echo "Usuario ${username} removido del grupo sudo."
+                        } else {
+                            echo "El usuario ${username} no está en el grupo sudo."
                         }
-                           
-                        // Remover al usuario y su directorio HOME con manejo de excepciones:
+
+                        // Eliminar usuario y su directorio HOME, manejar excepciones:
                         try {
-                        sh "sudo userdel -r -f ${username}"
+                            sh "sudo userdel -r ${username}"
+                            echo "Usuario ${username} eliminado correctamente."
                         } catch (Exception e) {
-                        echo "No se pudo eliminar al usuario ${username}: ${e.message}"
+                            echo "Error al eliminar usuario ${username}: ${e.message}"
                         }
-                        // Remover el grupo primario
+
+                        // Eliminar el grupo primario si existe:
                         try {
-                        sh "sudo groupdel ${primaryGroupName}"
+                            sh "sudo groupdel ${primaryGroupName}"
+                            echo "Grupo ${primaryGroupName} eliminado correctamente."
                         } catch (Exception e) {
-                        echo "No se pudo eliminar el grupo ${primaryGroupName}: ${e.message}"
+                            echo "No se pudo eliminar el grupo ${primaryGroupName}: ${e.message}"
                         }
-                        echo "El usuario ${username} y su grupo primario ${primaryGroupName} fueron removidos exitosamente"
                     } else {
-                        echo "No se proporcionó UID"
+                        echo "UID no proporcionado. No se procederá con la eliminación."
                     }
                 }
             }
         }
-        stage('Lista de usuarios luego de remover: ') {
+
+        stage('Mostrar usuarios después de la eliminación') {
             steps {
                 script {
-                    echo "Lista de usuarios luego de remover el usuario: "
-                    sh 'awk -F: \'$3 >= 1000 && $3 < 60000 {print $0}\' /etc/passwd' 
-                    }
+                    echo "Usuarios en el sistema después de la eliminación:"
+                    sh 'awk -F: \'$3 >= 1000 && $3 < 60000 {print $1}\' /etc/passwd'
                 }
             }
         }
     }
+
+    post {
+        always {
+            echo 'Proceso de eliminación finalizado.'
+        }
+    }
+}
+
